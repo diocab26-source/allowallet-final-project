@@ -1,0 +1,200 @@
+{
+  "info": {
+    "name": "Allo-Wallet Role-Based REST API",
+    "description": "For signup, run Open portal then Register student. For existing accounts, sign in through Auth. Postman keeps the PHP session cookie; the response test saves the session token for mutating requests. Enter a student_id for employee/admin ledger requests. Amounts are whole centavos (100 = PHP 1.00).",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "baseUrl", "value": "http://localhost/ALLOWALLET" },
+    { "key": "email", "value": "" },
+    { "key": "password", "value": "" },
+    { "key": "token", "value": "" },
+    { "key": "studentId", "value": "" },
+    { "key": "accountId", "value": "" },
+    { "key": "entryId", "value": "" }
+  ],
+  "item": [
+    {
+      "name": "Authentication",
+      "item": [
+        {
+          "name": "Open portal (get signup token)",
+          "request": { "method": "GET", "url": "{{baseUrl}}/portal.php" },
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "pm.test('Portal loaded', function () { pm.response.to.have.status(200); });",
+            "const match = pm.response.text().match(/data-token=\"([a-f0-9]+)\"/i);",
+            "pm.test('Signup token found', function () { pm.expect(match, 'portal data-token').to.not.be.null; });",
+            "if (match) pm.collectionVariables.set('token', match[1]);"
+          ] } }]
+        },
+        {
+          "name": "Register student",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "X-Allo-Token", "value": "{{token}}" }
+            ],
+            "body": { "mode": "raw", "raw": "{\n  \"action\": \"register\",\n  \"name\": \"Sample Student\",\n  \"email\": \"student@example.com\",\n  \"password\": \"ChangeMe123\",\n  \"confirmation\": \"ChangeMe123\"\n}", "options": { "raw": { "language": "json" } } },
+            "url": "{{baseUrl}}/api/auth.php"
+          },
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "pm.test('Student registration succeeded', function () { pm.response.to.have.status(201); });",
+            "if (pm.response.code === 201) { const data = pm.response.json(); pm.collectionVariables.set('token', data.token); pm.collectionVariables.set('email', data.user.email); pm.collectionVariables.set('password', 'ChangeMe123'); pm.collectionVariables.set('studentId', data.user.id); }"
+          ] } }]
+        },
+        {
+          "name": "Sign in (admin, employee, or student)",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"action\": \"login\",\n  \"email\": \"{{email}}\",\n  \"password\": \"{{password}}\"\n}", "options": { "raw": { "language": "json" } } },
+            "url": "{{baseUrl}}/api/auth.php"
+          },
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "pm.test('Sign in succeeded', function () { pm.response.to.have.status(200); });",
+            "const data = pm.response.json();",
+            "pm.collectionVariables.set('token', data.token);",
+            "pm.collectionVariables.set('role', data.user.role);",
+            "pm.test('Role is returned', function () { pm.expect(['admin','employee','student']).to.include(data.user.role); });"
+          ] } }]
+        },
+        {
+          "name": "Current session",
+          "request": { "method": "GET", "url": "{{baseUrl}}/api/auth.php" },
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "pm.test('Session is authenticated', function () { pm.response.to.have.status(200); });"
+          ] } }]
+        },
+        {
+          "name": "Sign out",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "X-Allo-Token", "value": "{{token}}" }
+            ],
+            "body": { "mode": "raw", "raw": "{}", "options": { "raw": { "language": "json" } } },
+            "url": "{{baseUrl}}/api/auth.php"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Accounts (admin manages; employee reads students)",
+      "item": [
+        {
+          "name": "List accounts or students",
+          "request": { "method": "GET", "url": "{{baseUrl}}/api/accounts.php" },
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "pm.test('Account list returned', function () { pm.response.to.have.status(200); });"
+          ] } }]
+        },
+        {
+          "name": "Create employee (admin only)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "X-Allo-Token", "value": "{{token}}" }
+            ],
+            "body": { "mode": "raw", "raw": "{\n  \"name\": \"Sample Employee\",\n  \"email\": \"employee@example.com\",\n  \"password\": \"ChangeMe123\",\n  \"role\": \"employee\"\n}", "options": { "raw": { "language": "json" } } },
+            "url": "{{baseUrl}}/api/accounts.php"
+          },
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "pm.test('Employee created', function () { pm.response.to.have.status(201); });",
+            "if (pm.response.code === 201) pm.collectionVariables.set('accountId', pm.response.json().account.id);"
+          ] } }]
+        },
+        {
+          "name": "Update account (admin only)",
+          "request": {
+            "method": "PUT",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "X-Allo-Token", "value": "{{token}}" }
+            ],
+            "body": { "mode": "raw", "raw": "{\n  \"id\": {{accountId}},\n  \"name\": \"Sample Employee\",\n  \"email\": \"employee@example.com\",\n  \"status\": \"active\"\n}", "options": { "raw": { "language": "json" } } },
+            "url": "{{baseUrl}}/api/accounts.php?id={{accountId}}"
+          }
+        },
+        {
+          "name": "Disable account (admin only)",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "X-Allo-Token", "value": "{{token}}" }
+            ],
+            "body": { "mode": "raw", "raw": "{\"id\": {{accountId}}}", "options": { "raw": { "language": "json" } } },
+            "url": "{{baseUrl}}/api/accounts.php?id={{accountId}}"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Student allowance ledger",
+      "item": [
+        {
+          "name": "Get student ledger (employee/admin: set studentId; student: own ledger)",
+          "request": { "method": "GET", "url": "{{baseUrl}}/api/ledger.php?student_id={{studentId}}" },
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "pm.test('Ledger returned', function () { pm.response.to.have.status(200); });"
+          ] } }]
+        },
+        {
+          "name": "Create allowance (employee/admin)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "X-Allo-Token", "value": "{{token}}" }
+            ],
+            "body": { "mode": "raw", "raw": "{\n  \"type\": \"allowance\",\n  \"student_id\": {{studentId}},\n  \"amount\": 50000,\n  \"description\": \"Weekly allowance\"\n}", "options": { "raw": { "language": "json" } } },
+            "url": "{{baseUrl}}/api/ledger.php"
+          },
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "pm.test('Allowance created', function () { pm.response.to.have.status(201); });",
+            "if (pm.response.code === 201) pm.collectionVariables.set('entryId', pm.response.json().id);"
+          ] } }]
+        },
+        {
+          "name": "Create expense (student only)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "X-Allo-Token", "value": "{{token}}" }
+            ],
+            "body": { "mode": "raw", "raw": "{\n  \"type\": \"expense\",\n  \"amount\": 8500,\n  \"description\": \"Lunch\"\n}", "options": { "raw": { "language": "json" } } },
+            "url": "{{baseUrl}}/api/ledger.php"
+          }
+        },
+        {
+          "name": "Update ledger entry (owner/admin/creator employee)",
+          "request": {
+            "method": "PUT",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "X-Allo-Token", "value": "{{token}}" }
+            ],
+            "body": { "mode": "raw", "raw": "{\n  \"id\": {{entryId}},\n  \"amount\": 50000,\n  \"description\": \"Weekly allowance update\"\n}", "options": { "raw": { "language": "json" } } },
+            "url": "{{baseUrl}}/api/ledger.php?id={{entryId}}"
+          }
+        },
+        {
+          "name": "Delete ledger entry (owner/admin/creator employee)",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "X-Allo-Token", "value": "{{token}}" }
+            ],
+            "body": { "mode": "raw", "raw": "{\"id\": {{entryId}}}", "options": { "raw": { "language": "json" } } },
+            "url": "{{baseUrl}}/api/ledger.php?id={{entryId}}"
+          }
+        }
+      ]
+    }
+  ]
+}
